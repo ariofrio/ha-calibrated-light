@@ -1,5 +1,6 @@
 """Configuration, command, state, and persistence behavior in Home Assistant."""
 
+import pytest
 from homeassistant.const import STATE_OFF, STATE_ON
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -187,3 +188,39 @@ async def test_configure_dialog_updates_model_selection_and_reference(hass):
     assert saved["type"] == "create_entry"
     await hass.async_block_till_done()
     assert hass.states.get("number.bedroom_lamp_reference_illuminance").state == "200.0"
+
+
+async def test_new_proxy_adopts_current_white_light_instead_of_starting_at_maximum(hass):
+    hass.states.async_set(
+        "light.raw_bedroom_lamp",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp"],
+            "color_mode": "color_temp",
+            "brightness": 41,
+            "color_temp_kelvin": 3009,
+        },
+    )
+    entry = MockConfigEntry(
+        domain="calibrated_light",
+        title="Bedroom Lamp",
+        unique_id="light.raw_bedroom_lamp",
+        data={
+            "name": "Bedroom Lamp",
+            "source_entity_id": "light.raw_bedroom_lamp",
+            "model_id": "9290034999",
+            "reference_lux": 173,
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    actual = float(hass.states.get("sensor.bedroom_lamp_estimated_illuminance").state)
+    requested = float(hass.states.get("number.bedroom_lamp_target_illuminance").state)
+    assert requested == pytest.approx(actual, abs=0.02)
+
+
+async def test_new_proxy_with_source_off_starts_at_minimum_on_target(hass):
+    await setup_proxy(hass)
+    target = float(hass.states.get("number.bedroom_lamp_target_illuminance").state)
+    assert 0 < target < 10

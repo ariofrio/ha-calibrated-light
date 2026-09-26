@@ -41,6 +41,8 @@ A CCT change keeps the requested lux. If the warmer/cooler setting cannot achiev
 
 Turning the proxy off retains the requested lux and CCT in HA storage. Turning it on explicitly sends both values again, rather than relying on the physical bulb's memory. If the target was zero, turning on starts at minimum on output. Source changes made outside the proxy are reflected in its actual light brightness and estimated sensor, but do not overwrite the requested target. If the source enters RGB/effect mode, the estimated sensor becomes unavailable; the next proxy control command returns it to tunable white. RGB/effects are not calibrated in this version.
 
+On first setup, the proxy adopts the source's current white-light output as its initial target, so its first command does not jump to maximum. If the source is off or in an unmodeled mode, it starts with the minimum on output as its saved target. Later setups restore the saved request.
+
 ## Model and limits
 
 The calculation is:

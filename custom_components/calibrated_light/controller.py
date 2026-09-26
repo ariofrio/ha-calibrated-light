@@ -23,7 +23,9 @@ class Controller:
         self.source = entry.options.get(CONF_SOURCE, entry.data[CONF_SOURCE])
         self.model = A23
         self.reference_lux = float(entry.options.get(CONF_REFERENCE, entry.data[CONF_REFERENCE]))
-        self.target_lux = self.reference_lux
+        self.target_lux = self.model.lux(
+            self.model.min_dim, self.model.reference_kelvin, self.reference_lux
+        )
         self.kelvin = self.model.reference_kelvin
         self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
         self.listeners: list[Callable[[], None]] = []
@@ -32,10 +34,26 @@ class Controller:
         data = await self.store.async_load() or {}
         target = data.get("target_lux")
         kelvin = data.get("kelvin")
-        if isinstance(target, (int, float)) and isfinite(target) and target >= 0:
+        if (
+            isinstance(target, (int, float))
+            and not isinstance(target, bool)
+            and isfinite(target)
+            and target >= 0
+            and isinstance(kelvin, int)
+            and not isinstance(kelvin, bool)
+            and self.model.min_kelvin <= kelvin <= self.model.max_kelvin
+        ):
             self.target_lux = float(target)
-        if isinstance(kelvin, int) and self.model.min_kelvin <= kelvin <= self.model.max_kelvin:
             self.kelvin = kelvin
+            return
+        if self.is_white():
+            state = self.source_state()
+            assert state is not None
+            actual_lux = self.estimated_lux()
+            if actual_lux is not None and actual_lux > 0:
+                self.kelvin = round(state.attributes["color_temp_kelvin"])
+                self.target_lux = actual_lux
+        await self._save()
 
     def subscribe(self, listener: Callable[[], None]) -> Callable[[], None]:
         self.listeners.append(listener)
