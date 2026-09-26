@@ -52,7 +52,7 @@ The calculation is:
 predicted lamp-only lx = reference lx × dimming_fraction(D) × peak_output(CCT) / peak_output(4000 K)
 ```
 
-`D` is the WiZ percentage (10–100). The two curves are monotone piecewise cubic interpolations of the supplied [measurements](docs/original-measurements.csv); the compact [curve coefficients](custom_components/calibrated_light/a23_curve.json) are evaluated without SciPy in HA. The original 4000 K/100% room reading calibrates all predictions at this one location. The 50% room reading independently checks the scaling within about 1 lx.
+`D` is the WiZ percentage (10–100). The two curves are monotone piecewise cubic interpolations of the supplied [measurements](docs/original-measurements.csv); the compact [curve coefficients](custom_components/calibrated_light/a23_curve.json) are embedded as Python data for event-loop-safe evaluation without SciPy in HA. The original 4000 K/100% room reading calibrates all predictions at this one location. The 50% room reading independently checks the scaling within about 1 lx.
 
 The CCT curve and dimming curve were measured inside the lampshade. Predicting across CCT at another position assumes the shade and room preserve those relative ratios; that has **not** been separately measured. The bulb's published 2550 lm rating is not used as an absolute calibration, and the model does not claim to measure emitted lumens. Sensor accuracy, meter position, ambient-light drift, and bulb variation affect the result. See [model provenance and limitations](docs/model.md).
 

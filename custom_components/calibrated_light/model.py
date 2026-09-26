@@ -1,11 +1,10 @@
 """Pure-Python evaluation of measured white-light curves."""
 
-import json
 import math
 from bisect import bisect_right
 from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
+
+from .curve_data import CURVE_DATA
 
 
 def _polynomial(table: dict, value: float) -> float:
@@ -16,11 +15,6 @@ def _polynomial(table: dict, value: float) -> float:
     delta = value - knots[segment]
     a, b, c, d = (row[segment] for row in table["coefficients"])
     return ((a * delta + b) * delta + c) * delta + d
-
-
-@lru_cache(maxsize=1)
-def _a23_data() -> dict:
-    return json.loads(Path(__file__).with_name("a23_curve.json").read_text())
 
 
 class A23:
@@ -42,7 +36,7 @@ class A23:
             raise ValueError("Dimming outside supported range")
         if not cls.min_kelvin <= kelvin <= cls.max_kelvin:
             raise ValueError("CCT outside measured range")
-        data = _a23_data()
+        data = CURVE_DATA
         fraction = _polynomial(data["shared_dimming"], dim)
         peak = _polynomial(data["peak_lux"], kelvin)
         reference_peak = _polynomial(data["peak_lux"], cls.reference_kelvin)

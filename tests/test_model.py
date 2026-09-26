@@ -1,8 +1,28 @@
 """Measured WiZ curve and control-state invariants."""
 
+import json
+from pathlib import Path
+
 import pytest
 
+from custom_components.calibrated_light.curve_data import CURVE_DATA
 from custom_components.calibrated_light.model import A23, map_brightness, plan_target
+
+
+def test_curve_evaluation_does_not_read_files(monkeypatch):
+    def reject_read(*args, **kwargs):
+        raise AssertionError("Curve evaluation must not read files in HA's event loop")
+
+    monkeypatch.setattr(Path, "read_text", reject_read)
+    assert A23.lux(100, 4001, 173) == pytest.approx(173)
+
+
+def test_embedded_curves_match_measurement_artifact():
+    artifact = Path(__file__).parents[1] / "custom_components/calibrated_light/a23_curve.json"
+    data = json.loads(artifact.read_text())
+    for key, curve in CURVE_DATA.items():
+        assert curve["knots"] == data[key]["knots"]
+        assert curve["coefficients"] == data[key]["coefficients"]
 
 
 def test_measured_reference_and_independent_room_check():
