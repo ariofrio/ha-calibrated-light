@@ -14,6 +14,8 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
 
     @callback
     def source_changed(event) -> None:
+        if controller.pending_adoption:
+            hass.async_create_task(controller.async_finish_adoption())
         controller.notify()
 
     entry.async_on_unload(async_track_state_change_event(hass, [controller.source], source_changed))

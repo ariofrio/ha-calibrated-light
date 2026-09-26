@@ -29,6 +29,7 @@ class Controller:
         self.kelvin = self.model.reference_kelvin
         self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
         self.listeners: list[Callable[[], None]] = []
+        self.pending_adoption = False
 
     async def async_load(self) -> None:
         data = await self.store.async_load() or {}
@@ -46,14 +47,24 @@ class Controller:
             self.target_lux = float(target)
             self.kelvin = kelvin
             return
+        self.pending_adoption = True
+        await self.async_finish_adoption()
+
+    async def async_finish_adoption(self) -> None:
+        """Adopt the first usable source state when there is no saved request."""
+        if not self.pending_adoption:
+            return
+        state = self.source_state()
+        if state is None or state.state in ("unknown", "unavailable"):
+            return
         if self.is_white():
-            state = self.source_state()
-            assert state is not None
             actual_lux = self.estimated_lux()
             if actual_lux is not None and actual_lux > 0:
                 self.kelvin = round(state.attributes["color_temp_kelvin"])
                 self.target_lux = actual_lux
+        self.pending_adoption = False
         await self._save()
+        self.notify()
 
     def subscribe(self, listener: Callable[[], None]) -> Callable[[], None]:
         self.listeners.append(listener)
@@ -125,12 +136,16 @@ class Controller:
         await self.apply()
 
     async def turn_on(self) -> None:
+        if self.pending_adoption:
+            await self._save()
         if self.target_lux == 0:
             self.target_lux = self.model.lux(self.model.min_dim, self.kelvin, self.reference_lux)
             await self._save()
         await self.apply()
 
     async def turn_off(self) -> None:
+        if self.pending_adoption:
+            await self._save()
         await self.hass.services.async_call(
             "light", "turn_off", {"entity_id": self.source}, blocking=True
         )
@@ -164,4 +179,5 @@ class Controller:
         self.notify()
 
     async def _save(self) -> None:
+        self.pending_adoption = False
         await self.store.async_save({"target_lux": self.target_lux, "kelvin": self.kelvin})
