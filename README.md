@@ -1,6 +1,6 @@
 # Calibrated Light for Home Assistant
 
-A white-light proxy whose **target illuminance is in lux at a position you choose**. It wraps an existing tunable-white light, uses a measured model of that bulb's dimming and color-temperature response, and controls the source through Home Assistant. It is separate from [Daylight](https://github.com/ariofrio/ha-daylight): Daylight describes an outdoor clear-sky reference; Calibrated Light describes a lamp's estimated contribution at one indoor position.
+A light proxy whose **white-light target illuminance is in lux at a position you choose**. It wraps an existing light, uses a measured model of that bulb's white-light dimming and color-temperature response, and passes uncalibrated color and effect controls through to the source. It is separate from [Daylight](https://github.com/ariofrio/ha-daylight): Daylight describes an outdoor clear-sky reference; Calibrated Light describes a lamp's estimated contribution at one indoor position.
 
 The first measured profile is the [Philips WiZ 21 W A23, retail model 9290034999](https://www.usa.lighting.philips.com/consumer/p/smart-led-bulb-21w-eq150w-a23-e26/046677578718). WiZ's HA model string `SHRGB` is too broad to identify this retail model automatically. Select the measured model only if the bulb label matches.
 
@@ -30,8 +30,8 @@ For a device named **Bedroom Lamp**, Home Assistant normally assigns:
 
 | Entity | Purpose |
 |---|---|
-| `light.bedroom_lamp` | On/off, tunable-white CCT, and a 1–255 brightness slider mapped across the *achievable lamp-only lux range* at the current CCT |
-| `number.bedroom_lamp_target_illuminance` | Requested lamp-only lux at the calibrated position; the main numeric control |
+| `light.bedroom_lamp` | On/off, source-supported color modes and effects; in tunable white, its 1–255 brightness slider spans the *achievable lamp-only lux range* at the current CCT; in uncalibrated modes it uses the source's raw 1–255 brightness |
+| `number.bedroom_lamp_target_illuminance` | Saved white-light lamp-only lux target at the calibrated position; setting it switches to tunable white |
 | `sensor.bedroom_lamp_estimated_illuminance` | Estimated actual lamp-only lux from the source's reported brightness and CCT; 0 when off, unavailable when its output cannot be modeled |
 | `number.bedroom_lamp_reference_illuminance` | Calibration number, in lx; marked as a configuration entity |
 
@@ -41,7 +41,9 @@ If you later rename the source entity, open **Configure** on this integration an
 
 A CCT change keeps the requested lux. If the warmer/cooler setting cannot achieve that target, the source is driven to its maximum there, while the target number stays unchanged. Moving back to a CCT with more output restores the original target. An explicit change to the light's brightness slider *does* set a new target. Setting the target number sends a command immediately; setting it to zero turns the light off. The source's minimum on setting is about 10%, so positive targets below that physical floor produce the minimum on output.
 
-Turning the proxy off retains the requested lux and CCT in HA storage. Turning it on explicitly sends both values again, rather than relying on the physical bulb's memory. If the target was zero, turning on starts at minimum on output. Source changes made outside the proxy are reflected in its actual light brightness and estimated sensor, but do not overwrite the requested target. If the source enters RGB/effect mode, the estimated sensor becomes unavailable; the next proxy control command returns it to tunable white. RGB/effects are not calibrated in this version.
+In tunable-white mode, turning the proxy off retains the requested lux and CCT in HA storage. Turning it on sends both values again; a zero target starts at minimum on output. Source changes made outside the proxy update its reported light state and estimated sensor but do not overwrite the requested target.
+
+The proxy also exposes the source's supported color modes and effects. In RGB/effect modes its brightness slider uses the source's raw 1–255 scale and estimated illuminance is unavailable; the saved white-light lux target remains visible but does not control that mode. Selecting a color/effect or changing raw brightness leaves the target unchanged. Explicitly setting a CCT or the target lux switches back to calibrated white. If turned off in an uncalibrated mode, the proxy restores the last color/effect and raw brightness on the next ordinary turn-on, including after a restart.
 
 The proxy forwards `transition` requests to the source light. HA's WiZ integration does not advertise transition support or apply that argument, so a WiZ source currently changes at its normal speed; a timed sunrise ramp needs separate automation logic.
 

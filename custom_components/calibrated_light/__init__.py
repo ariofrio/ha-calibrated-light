@@ -10,12 +10,14 @@ from .controller import Controller
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
     controller = Controller(hass, entry)
     await controller.async_load()
+    controller.observe_source()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = controller
 
     @callback
     def source_changed(event) -> None:
         if controller.pending_adoption:
             hass.async_create_task(controller.async_finish_adoption())
+        controller.observe_source(event.data.get("old_state"))
         controller.notify()
 
     entry.async_on_unload(async_track_state_change_event(hass, [controller.source], source_changed))

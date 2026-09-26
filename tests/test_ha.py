@@ -10,7 +10,9 @@ async def setup_proxy(hass):
         "light.raw_bedroom_lamp",
         STATE_OFF,
         {
-            "supported_color_modes": ["color_temp"],
+            "supported_color_modes": ["color_temp", "rgbww"],
+            "supported_features": 4,
+            "effect_list": ["Party", "Candlelight"],
             "min_color_temp_kelvin": 2200,
             "max_color_temp_kelvin": 6500,
         },
@@ -61,17 +63,34 @@ def intercept_source(hass, monkeypatch):
         if domain == "light" and data and data.get("entity_id") == "light.raw_bedroom_lamp":
             calls.append((service, data))
             if service == "turn_on":
+                previous = hass.states.get("light.raw_bedroom_lamp")
+                attributes = dict(previous.attributes) if previous else {}
+                if "color_temp_kelvin" in data:
+                    attributes.update(
+                        color_mode="color_temp",
+                        color_temp_kelvin=data["color_temp_kelvin"],
+                        effect=None,
+                    )
+                elif "rgbww_color" in data:
+                    attributes.update(
+                        color_mode="rgbww", rgbww_color=data["rgbww_color"], effect=None
+                    )
+                elif "effect" in data:
+                    attributes.update(color_mode="brightness", effect=data["effect"])
+                if "brightness" in data:
+                    attributes["brightness"] = data["brightness"]
                 hass.states.async_set(
                     "light.raw_bedroom_lamp",
                     STATE_ON,
-                    {
-                        "color_mode": "color_temp",
-                        "brightness": data["brightness"],
-                        "color_temp_kelvin": data["color_temp_kelvin"],
-                    },
+                    attributes,
                 )
             elif service == "turn_off":
-                hass.states.async_set("light.raw_bedroom_lamp", STATE_OFF)
+                source = hass.states.get("light.raw_bedroom_lamp")
+                hass.states.async_set(
+                    "light.raw_bedroom_lamp",
+                    STATE_OFF,
+                    dict(source.attributes) if source else {},
+                )
             return None
         return await original(self, domain, service, data, **kwargs)
 
@@ -168,6 +187,260 @@ async def test_external_rgb_mode_makes_estimate_unavailable(hass):
     )
     await hass.async_block_till_done()
     assert hass.states.get("sensor.bedroom_lamp_estimated_illuminance").state == "unavailable"
+
+
+async def test_rgbww_mode_uses_raw_brightness_and_preserves_white_target(hass, monkeypatch):
+    await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {"entity_id": "number.bedroom_lamp_target_illuminance", "value": 50},
+        blocking=True,
+    )
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"entity_id": "light.bedroom_lamp", "rgbww_color": (20, 40, 80, 0, 0), "brightness": 64},
+        blocking=True,
+    )
+    assert calls[-1][1] == {
+        "entity_id": "light.raw_bedroom_lamp",
+        "rgbww_color": (20, 40, 80, 0, 0),
+        "brightness": 64,
+    }
+    hass.states.async_set(
+        "light.raw_bedroom_lamp",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp", "rgbww"],
+            "supported_features": 4,
+            "effect_list": ["Party", "Candlelight"],
+            "color_mode": "rgbww",
+            "brightness": 64,
+            "rgbww_color": (20, 40, 80, 0, 0),
+        },
+    )
+    await hass.async_block_till_done()
+    proxy = hass.states.get("light.bedroom_lamp")
+    assert proxy.attributes["supported_color_modes"] == ["color_temp", "rgbww"]
+    assert proxy.attributes["color_mode"] == "rgbww"
+    assert proxy.attributes["rgbww_color"] == (20, 40, 80, 0, 0)
+    assert proxy.attributes["brightness"] == 64
+    assert proxy.attributes["effect_list"] == ["Party", "Candlelight"]
+    assert proxy.attributes["supported_features"] & 4
+    assert hass.states.get("sensor.bedroom_lamp_estimated_illuminance").state == "unavailable"
+    assert hass.states.get("number.bedroom_lamp_target_illuminance").state == "50.0"
+
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"entity_id": "light.bedroom_lamp", "brightness": 100},
+        blocking=True,
+    )
+    assert calls[-1][1] == {"entity_id": "light.raw_bedroom_lamp", "brightness": 100}
+    assert hass.states.get("number.bedroom_lamp_target_illuminance").state == "50.0"
+
+
+async def test_color_picker_converts_to_source_rgbww_mode(hass, monkeypatch):
+    await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"entity_id": "light.bedroom_lamp", "rgb_color": (255, 0, 0)},
+        blocking=True,
+    )
+    assert "rgbww_color" in calls[-1][1]
+    assert "color_temp_kelvin" not in calls[-1][1]
+
+
+async def test_effect_and_flash_follow_source_capabilities(hass, monkeypatch):
+    await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    hass.states.async_set(
+        "light.raw_bedroom_lamp",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp", "rgbww"],
+            "supported_features": 12,
+            "effect_list": ["Party"],
+            "effect": "Party",
+            "color_mode": "brightness",
+            "brightness": 88,
+        },
+    )
+    await hass.async_block_till_done()
+    proxy = hass.states.get("light.bedroom_lamp")
+    assert proxy.attributes["color_mode"] == "brightness"
+    assert proxy.attributes["effect"] == "Party"
+    assert proxy.attributes["brightness"] == 88
+    assert proxy.attributes["supported_features"] & 8
+    assert hass.states.get("sensor.bedroom_lamp_estimated_illuminance").state == "unavailable"
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"entity_id": "light.bedroom_lamp", "effect": "Party", "flash": "short"},
+        blocking=True,
+    )
+    assert calls[-1][1] == {
+        "entity_id": "light.raw_bedroom_lamp",
+        "effect": "Party",
+        "flash": "short",
+    }
+    await hass.services.async_call(
+        "light", "turn_off", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    await hass.services.async_call(
+        "light", "turn_on", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    assert calls[-1][1]["effect"] == "Party"
+    assert calls[-1][1]["brightness"] == 88
+
+
+async def test_explicit_kelvin_or_target_returns_to_calibrated_white(hass, monkeypatch):
+    await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {"entity_id": "number.bedroom_lamp_target_illuminance", "value": 50},
+        blocking=True,
+    )
+    hass.states.async_set(
+        "light.raw_bedroom_lamp",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp", "rgbww"],
+            "supported_features": 4,
+            "color_mode": "rgbww",
+            "brightness": 64,
+            "rgbww_color": (20, 40, 80, 0, 0),
+        },
+    )
+    await hass.async_block_till_done()
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"entity_id": "light.bedroom_lamp", "color_temp_kelvin": 4001},
+        blocking=True,
+    )
+    assert calls[-1][1]["color_temp_kelvin"] == 4001
+    assert "rgbww_color" not in calls[-1][1]
+    assert hass.states.get("number.bedroom_lamp_target_illuminance").state == "50.0"
+    assert hass.states.get("sensor.bedroom_lamp_estimated_illuminance").state != "unavailable"
+    hass.states.async_set(
+        "light.raw_bedroom_lamp",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp", "rgbww"],
+            "supported_features": 4,
+            "color_mode": "rgbww",
+            "brightness": 64,
+            "rgbww_color": (20, 40, 80, 0, 0),
+        },
+    )
+    await hass.async_block_till_done()
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {"entity_id": "number.bedroom_lamp_target_illuminance", "value": 60},
+        blocking=True,
+    )
+    assert calls[-1][1]["color_temp_kelvin"] == 4001
+    assert hass.states.get("number.bedroom_lamp_target_illuminance").state == "60.0"
+
+
+async def test_uncalibrated_color_survives_proxy_off_and_on(hass, monkeypatch):
+    await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {"entity_id": "number.bedroom_lamp_target_illuminance", "value": 50},
+        blocking=True,
+    )
+    hass.states.async_set(
+        "light.raw_bedroom_lamp",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp", "rgbww"],
+            "supported_features": 4,
+            "color_mode": "rgbww",
+            "rgbww_color": (20, 40, 80, 0, 0),
+            "brightness": 64,
+        },
+    )
+    await hass.async_block_till_done()
+    await hass.services.async_call(
+        "light", "turn_off", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    await hass.services.async_call(
+        "light", "turn_on", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    assert calls[-1][1] == {
+        "entity_id": "light.raw_bedroom_lamp",
+        "rgbww_color": (20, 40, 80, 0, 0),
+        "brightness": 64,
+    }
+    assert hass.states.get("number.bedroom_lamp_target_illuminance").state == "50.0"
+
+
+async def test_uncalibrated_color_survives_proxy_reload(hass, monkeypatch):
+    entry = await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    hass.states.async_set(
+        "light.raw_bedroom_lamp",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp", "rgbww"],
+            "supported_features": 4,
+            "color_mode": "rgbww",
+            "rgbww_color": (20, 40, 80, 0, 0),
+            "brightness": 64,
+        },
+    )
+    await hass.async_block_till_done()
+    await hass.services.async_call(
+        "light", "turn_off", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await hass.services.async_call(
+        "light", "turn_on", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    assert calls[-1][1]["rgbww_color"] == [20, 40, 80, 0, 0]
+    assert calls[-1][1]["brightness"] == 64
+
+
+async def test_white_channel_mode_restores_its_raw_level(hass, monkeypatch):
+    await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    hass.states.async_set(
+        "light.raw_bedroom_lamp",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp", "rgbww", "white"],
+            "color_mode": "white",
+            "brightness": 77,
+        },
+    )
+    await hass.async_block_till_done()
+    await hass.services.async_call(
+        "light", "turn_off", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    await hass.services.async_call(
+        "light", "turn_on", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    assert calls[-1][1] == {"entity_id": "light.raw_bedroom_lamp", "white": 77}
+    await hass.services.async_call(
+        "light", "turn_off", {"entity_id": "light.bedroom_lamp"}, blocking=True
+    )
+    await hass.services.async_call(
+        "light", "turn_on", {"entity_id": "light.bedroom_lamp", "brightness": 100}, blocking=True
+    )
+    assert calls[-1][1] == {"entity_id": "light.raw_bedroom_lamp", "white": 100}
 
 
 async def test_brightness_slider_controls_lux_and_reports_actual_raw_output(hass, monkeypatch):

@@ -30,9 +30,12 @@ class Controller:
         self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
         self.listeners: list[Callable[[], None]] = []
         self.pending_adoption = False
+        self.last_raw_settings: dict | None = None
 
     async def async_load(self) -> None:
         data = await self.store.async_load() or {}
+        if isinstance(data.get("last_raw_settings"), dict):
+            self.last_raw_settings = data["last_raw_settings"]
         target = data.get("target_lux")
         kelvin = data.get("kelvin")
         if (
@@ -82,9 +85,59 @@ class Controller:
     def source_state(self) -> State | None:
         return self.hass.states.get(self.source)
 
-    def is_white(self) -> bool:
+    def is_white(self, state: State | None = None) -> bool:
+        state = state or self.source_state()
+        return (
+            state is not None
+            and state.attributes.get("color_mode") == ColorMode.COLOR_TEMP
+            and state.attributes.get("effect") in (None, "off")
+        )
+
+    @staticmethod
+    def _raw_settings(state: State) -> dict | None:
+        attributes = state.attributes
+        settings = {}
+        if effect := attributes.get("effect"):
+            if effect != "off":
+                settings["effect"] = effect
+        if not settings:
+            color_key = {
+                ColorMode.RGB: "rgb_color",
+                ColorMode.RGBW: "rgbw_color",
+                ColorMode.RGBWW: "rgbww_color",
+                ColorMode.HS: "hs_color",
+                ColorMode.XY: "xy_color",
+            }.get(attributes.get("color_mode"))
+            if color_key and (value := attributes.get(color_key)) is not None:
+                settings[color_key] = value
+        if (brightness := attributes.get("brightness")) is not None:
+            if attributes.get("color_mode") == ColorMode.WHITE:
+                settings["white"] = brightness
+            else:
+                settings["brightness"] = brightness
+        return settings or None
+
+    def observe_source(self, previous: State | None = None) -> None:
         state = self.source_state()
-        return state is not None and state.attributes.get("color_mode") == ColorMode.COLOR_TEMP
+        if state is None:
+            return
+        before = self.last_raw_settings
+        if state.state == STATE_ON:
+            self.last_raw_settings = None if self.is_white(state) else self._raw_settings(state)
+        elif previous is not None and previous.state == STATE_ON and not self.is_white(previous):
+            self.last_raw_settings = self._raw_settings(previous)
+        else:
+            return
+        if self.last_raw_settings != before and (
+            self.last_raw_settings is None or before is None or state.state != STATE_ON
+        ):
+            self.hass.async_create_task(self._save())
+
+    def uses_raw_brightness(self) -> bool:
+        state = self.source_state()
+        if state is not None and state.state == STATE_ON:
+            return not self.is_white(state)
+        return self.last_raw_settings is not None
 
     def estimated_lux(self) -> float | None:
         state = self.source_state()
@@ -105,11 +158,14 @@ class Controller:
             return None
 
     def display_brightness(self) -> int | None:
-        actual = self.estimated_lux()
-        if actual is None or actual == 0:
-            return None
         state = self.source_state()
-        assert state is not None
+        if state is None or state.state != STATE_ON:
+            return None
+        actual = self.estimated_lux()
+        if actual is None:
+            return state.attributes.get("brightness")
+        if actual == 0:
+            return None
         return brightness_for_lux(
             self.model, actual, round(state.attributes["color_temp_kelvin"]), self.reference_lux
         )
@@ -118,6 +174,7 @@ class Controller:
         if not isfinite(target) or target < 0:
             raise ValueError("Target illuminance must be nonnegative and finite")
         self.target_lux = float(target)
+        self.last_raw_settings = None
         await self._save()
         await self.apply()
 
@@ -127,6 +184,7 @@ class Controller:
         if kelvin is not None:
             self.kelvin = kelvin
         self.target_lux = map_brightness(self.model, brightness, self.kelvin, self.reference_lux)
+        self.last_raw_settings = None
         await self._save()
         await self.apply(transition)
 
@@ -134,10 +192,15 @@ class Controller:
         if not self.model.min_kelvin <= kelvin <= self.model.max_kelvin:
             raise ValueError("CCT outside measured range")
         self.kelvin = kelvin
+        self.last_raw_settings = None
         await self._save()
         await self.apply(transition)
 
     async def turn_on(self, transition: float | None = None) -> None:
+        if self.last_raw_settings is not None and self.uses_raw_brightness():
+            attributes = {"transition": transition} if transition is not None else {}
+            await self.forward_raw(attributes)
+            return
         if self.pending_adoption:
             await self._save()
         if self.target_lux == 0:
@@ -145,13 +208,42 @@ class Controller:
             await self._save()
         await self.apply(transition)
 
-    async def turn_off(self, transition: float | None = None) -> None:
+    async def turn_off(self, transition: float | None = None, flash: str | None = None) -> None:
         if self.pending_adoption:
+            await self._save()
+        state = self.source_state()
+        if state is not None and state.state == STATE_ON and not self.is_white(state):
+            self.last_raw_settings = self._raw_settings(state)
             await self._save()
         data = {"entity_id": self.source}
         if transition is not None:
             data["transition"] = transition
+        if flash is not None:
+            data["flash"] = flash
         await self.hass.services.async_call("light", "turn_off", data, blocking=True)
+        self.notify()
+
+    async def forward_raw(self, attributes: dict) -> None:
+        state = self.source_state()
+        if state is None or state.state != STATE_ON:
+            if self.last_raw_settings is not None and not any(
+                key in attributes
+                for key in (
+                    "effect",
+                    "rgb_color",
+                    "rgbw_color",
+                    "rgbww_color",
+                    "hs_color",
+                    "xy_color",
+                    "white",
+                )
+            ):
+                attributes = {**self.last_raw_settings, **attributes}
+                if "white" in self.last_raw_settings and "brightness" in attributes:
+                    attributes["white"] = attributes.pop("brightness")
+        await self.hass.services.async_call(
+            "light", "turn_on", {"entity_id": self.source, **attributes}, blocking=True
+        )
         self.notify()
 
     async def apply(self, transition: float | None = None) -> None:
@@ -186,4 +278,10 @@ class Controller:
 
     async def _save(self) -> None:
         self.pending_adoption = False
-        await self.store.async_save({"target_lux": self.target_lux, "kelvin": self.kelvin})
+        await self.store.async_save(
+            {
+                "target_lux": self.target_lux,
+                "kelvin": self.kelvin,
+                "last_raw_settings": self.last_raw_settings,
+            }
+        )
