@@ -4,6 +4,8 @@ import pytest
 from homeassistant.const import STATE_OFF, STATE_ON
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.calibrated_light.api import get_calibrated_light
+
 
 async def setup_proxy(hass):
     hass.states.async_set(
@@ -126,6 +128,20 @@ async def test_entities_track_source_and_preserve_target_on_clip(hass, monkeypat
         blocking=True,
     )
     assert calls[-1][1]["brightness"] < 255
+
+
+async def test_public_port_atomically_sets_lux_and_cct(hass, monkeypatch):
+    await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    port = get_calibrated_light(hass, "light.bedroom_lamp")
+    assert port is not None
+    assert port.min_lux(4000) < 90 < port.max_lux(4000)
+    await port.async_set_output(90, 4000)
+    assert len(calls) == 1
+    assert calls[-1][1]["color_temp_kelvin"] == 4000
+    assert float(hass.states.get("number.bedroom_lamp_target_illuminance").state) == 90
+    assert port.estimated_lux() == pytest.approx(90, abs=2)
+    assert port.reported_kelvin() == 4000
 
 
 async def test_off_and_on_restore_requested_values(hass, monkeypatch):

@@ -178,6 +178,20 @@ class Controller:
         await self._save()
         await self.apply()
 
+    async def set_target_and_kelvin(
+        self, target: float, kelvin: int, transition: float | None = None
+    ) -> None:
+        """Apply one requested lux/CCT pair in a single source-light command."""
+        if not isfinite(target) or target < 0:
+            raise ValueError("Target illuminance must be nonnegative and finite")
+        if not self.model.min_kelvin <= kelvin <= self.model.max_kelvin:
+            raise ValueError("CCT outside measured range")
+        self.target_lux = float(target)
+        self.kelvin = kelvin
+        self.last_raw_settings = None
+        await self._save()
+        await self.apply(transition)
+
     async def set_brightness(
         self, brightness: int, kelvin: int | None = None, transition: float | None = None
     ) -> None:
