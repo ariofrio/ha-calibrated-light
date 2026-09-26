@@ -47,6 +47,8 @@ The proxy also exposes the source's supported color modes and effects. In RGB/ef
 
 The proxy forwards `transition` requests to the source light. HA's WiZ integration does not advertise transition support or apply that argument, so a WiZ source currently changes at its normal speed; a timed sunrise ramp needs separate automation logic.
 
+For higher-level controllers such as [Melanopic Light](https://github.com/ariofrio/ha-melanopic-light), `custom_components.calibrated_light.api.get_calibrated_light(hass, light_entity_id)` returns a runtime port for an integration-owned light. It exposes the modeled on-range at a CCT, the source-reported CCT, estimated lamp-only lux, a calibration key, and `async_set_output(lux, kelvin)` to save and command both values atomically. The port is resolved afresh after a Calibrated Light entry reload. The reported CCT is the bulb's HA state, **not** an independent spectral or color-meter measurement.
+
 On first setup, the proxy waits for the source's first usable state, then adopts its current white-light output as the initial target, so its first command does not jump to maximum. If the source is off or in an unmodeled mode, it starts with the minimum on output as its saved target. Later setups restore the saved request.
 
 ## Model and limits
