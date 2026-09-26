@@ -1,0 +1,13 @@
+{
+  "domain": "calibrated_light",
+  "name": "Calibrated Light",
+  "codeowners": ["@ariofrio"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/ariofrio/ha-calibrated-light",
+  "integration_type": "helper",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/ariofrio/ha-calibrated-light/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

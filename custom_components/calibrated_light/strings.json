@@ -1,0 +1,57 @@
+{
+  "title": "Calibrated Light",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a calibrated light",
+        "description": "Choose a source light with tunable white and a measured bulb curve. Reference illuminance is the lamp-only reading at your chosen position: measure the light off and on at 4000 K and 100% brightness, then enter on minus off.",
+        "data": {
+          "name": "Device name",
+          "source_entity_id": "Source light",
+          "model_id": "Measured bulb model",
+          "reference_lux": "Reference illuminance"
+        },
+        "data_description": {
+          "reference_lux": "Lamp-only lx at the target position, 4000 K and 100% brightness."
+        }
+      }
+    },
+    "error": {
+      "unsupported_model": "This bulb model has no measured curve.",
+      "proxy_as_source": "Select a physical source light, not this proxy.",
+      "source_missing": "The source light does not exist.",
+      "source_not_tunable_white": "The source must support color temperature.",
+      "invalid_reference": "Enter a positive finite reference illuminance."
+    },
+    "abort": {
+      "already_configured": "This source light already has a calibrated proxy."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure calibrated light",
+        "data": {
+          "model_id": "Measured bulb model",
+          "reference_lux": "Reference illuminance"
+        }
+      }
+    },
+    "error": {
+      "unsupported_model": "This bulb model has no measured curve.",
+      "proxy_as_source": "Select a physical source light, not this proxy.",
+      "source_missing": "The source light does not exist.",
+      "source_not_tunable_white": "The source must support color temperature.",
+      "invalid_reference": "Enter a positive finite reference illuminance."
+    }
+  },
+  "entity": {
+    "number": {
+      "target_illuminance": {"name": "Target illuminance"},
+      "reference_illuminance": {"name": "Reference illuminance"}
+    },
+    "sensor": {
+      "estimated_illuminance": {"name": "Estimated illuminance"}
+    }
+  }
+}
