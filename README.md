@@ -36,6 +36,7 @@ For a device named **Bedroom Lamp**, Home Assistant normally assigns:
 | `number.bedroom_lamp_reference_illuminance` | Calibration number, in lx; marked as a configuration entity |
 
 Entity IDs are assigned by HA and can be renamed. The original source light remains its own HA entity; this integration does not hide or rename it.
+If you later rename the source entity, open **Configure** on this integration and select its new entity ID so the proxy follows it.
 
 A CCT change keeps the requested lux. If the warmer/cooler setting cannot achieve that target, the source is driven to its maximum there, while the target number stays unchanged. Moving back to a CCT with more output restores the original target. An explicit change to the light's brightness slider *does* set a new target. Setting the target number sends a command immediately; setting it to zero turns the light off. The source's minimum on setting is about 10%, so positive targets below that physical floor produce the minimum on output.
 

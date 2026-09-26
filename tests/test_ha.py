@@ -181,13 +181,50 @@ async def test_configure_dialog_updates_model_selection_and_reference(hass):
     entry = await setup_proxy(hass)
     form = await hass.config_entries.options.async_init(entry.entry_id)
     assert form["type"] == "form"
-    assert {key.schema for key in form["data_schema"].schema} == {"model_id", "reference_lux"}
+    assert {key.schema for key in form["data_schema"].schema} == {
+        "source_entity_id",
+        "model_id",
+        "reference_lux",
+    }
     saved = await hass.config_entries.options.async_configure(
-        form["flow_id"], {"model_id": "9290034999", "reference_lux": 200}
+        form["flow_id"],
+        {
+            "source_entity_id": "light.raw_bedroom_lamp",
+            "model_id": "9290034999",
+            "reference_lux": 200,
+        },
     )
     assert saved["type"] == "create_entry"
     await hass.async_block_till_done()
     assert hass.states.get("number.bedroom_lamp_reference_illuminance").state == "200.0"
+
+
+async def test_configure_dialog_can_follow_a_source_entity_rename(hass):
+    entry = await setup_proxy(hass)
+    hass.states.async_set(
+        "light.renamed_source",
+        STATE_ON,
+        {
+            "supported_color_modes": ["color_temp"],
+            "color_mode": "color_temp",
+            "brightness": 255,
+            "color_temp_kelvin": 4001,
+        },
+    )
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    saved = await hass.config_entries.options.async_configure(
+        form["flow_id"],
+        {
+            "source_entity_id": "light.renamed_source",
+            "model_id": "9290034999",
+            "reference_lux": 173,
+        },
+    )
+    assert saved["type"] == "create_entry"
+    await hass.async_block_till_done()
+    assert hass.states.get("light.bedroom_lamp").attributes["source_entity_id"] == (
+        "light.renamed_source"
+    )
 
 
 async def test_new_proxy_adopts_current_white_light_instead_of_starting_at_maximum(hass):

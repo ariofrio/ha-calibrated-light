@@ -1,6 +1,7 @@
 """Select a measured bulb model and receiving-position calibration."""
 
 import math
+from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, OptionsFlow
@@ -44,6 +45,9 @@ def _schema(defaults=None):
 def _options_schema(defaults):
     return vol.Schema(
         {
+            vol.Required(CONF_SOURCE, default=defaults[CONF_SOURCE]): EntitySelector(
+                EntitySelectorConfig(domain="light")
+            ),
             vol.Required(CONF_MODEL, default=defaults[CONF_MODEL]): SelectSelector(
                 SelectSelectorConfig(options=[{"value": A23.model_id, "label": A23.name}])
             ),
@@ -54,17 +58,20 @@ def _options_schema(defaults):
     )
 
 
-def _errors(hass, data):
+def _errors(hass, data, current_entry_id=None):
     if data[CONF_MODEL] != A23.model_id:
         return {CONF_MODEL: "unsupported_model"}
-    if data[CONF_SOURCE] == "light." + data[CONF_NAME].lower().replace(" ", "_"):
-        return {CONF_SOURCE: "proxy_as_source"}
     state = hass.states.get(data[CONF_SOURCE])
     if state is None:
         return {CONF_SOURCE: "source_missing"}
     registry_entry = er.async_get(hass).async_get(data[CONF_SOURCE])
     if registry_entry is not None and registry_entry.platform == DOMAIN:
         return {CONF_SOURCE: "proxy_as_source"}
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.entry_id != current_entry_id and (
+            entry.options.get(CONF_SOURCE, entry.data[CONF_SOURCE]) == data[CONF_SOURCE]
+        ):
+            return {CONF_SOURCE: "source_already_configured"}
     modes = state.attributes.get("supported_color_modes", [])
     if "color_temp" not in modes:
         return {CONF_SOURCE: "source_not_tunable_white"}
@@ -85,8 +92,7 @@ class CalibratedLightConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             errors = _errors(self.hass, user_input)
             if not errors:
-                await self.async_set_unique_id(user_input[CONF_SOURCE])
-                self._abort_if_unique_id_configured()
+                await self.async_set_unique_id(uuid4().hex)
                 return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
         return self.async_show_form(step_id="user", data_schema=_schema(user_input), errors=errors)
 
@@ -95,7 +101,9 @@ class CalibratedLightOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input=None):
         errors = {}
         if user_input is not None:
-            errors = _errors(self.hass, {**self.config_entry.data, **user_input})
+            errors = _errors(
+                self.hass, {**self.config_entry.data, **user_input}, self.config_entry.entry_id
+            )
             if not errors:
                 return self.async_create_entry(title="", data=user_input)
         return self.async_show_form(

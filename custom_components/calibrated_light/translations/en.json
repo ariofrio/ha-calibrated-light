@@ -19,6 +19,7 @@
     "error": {
       "unsupported_model": "This bulb model has no measured curve.",
       "proxy_as_source": "Select a physical source light, not this proxy.",
+      "source_already_configured": "This source light already has a calibrated proxy.",
       "source_missing": "The source light does not exist.",
       "source_not_tunable_white": "The source must support color temperature.",
       "invalid_reference": "Enter a positive finite reference illuminance."
@@ -32,6 +33,7 @@
       "init": {
         "title": "Configure calibrated light",
         "data": {
+          "source_entity_id": "Source light",
           "model_id": "Measured bulb model",
           "reference_lux": "Reference illuminance"
         }
@@ -40,6 +42,7 @@
     "error": {
       "unsupported_model": "This bulb model has no measured curve.",
       "proxy_as_source": "Select a physical source light, not this proxy.",
+      "source_already_configured": "This source light already has a calibrated proxy.",
       "source_missing": "The source light does not exist.",
       "source_not_tunable_white": "The source must support color temperature.",
       "invalid_reference": "Enter a positive finite reference illuminance."
