@@ -26,15 +26,18 @@ class TargetIlluminance(ProxyEntity, NumberEntity):
 
     @property
     def native_max_value(self) -> float:
-        return max(
+        return round(
+            max(
+                1,
+                self.controller.target_lux,
+                A23.lux(100, 4003, self.controller.reference_lux),
+            ),
             1,
-            self.controller.target_lux,
-            A23.lux(100, 4003, self.controller.reference_lux),
         )
 
     @property
     def native_value(self) -> float:
-        return self.controller.target_lux
+        return round(self.controller.target_lux, 1)
 
     async def async_set_native_value(self, value: float) -> None:
         await self.controller.set_target(value)

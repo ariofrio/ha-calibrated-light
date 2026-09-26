@@ -171,7 +171,7 @@ async def test_external_rgb_mode_makes_estimate_unavailable(hass):
 
 
 async def test_brightness_slider_controls_lux_and_reports_actual_raw_output(hass, monkeypatch):
-    await setup_proxy(hass)
+    entry = await setup_proxy(hass)
     calls = intercept_source(hass, monkeypatch)
     await hass.services.async_call(
         "light",
@@ -184,6 +184,10 @@ async def test_brightness_slider_controls_lux_and_reports_actual_raw_output(hass
     assert calls[-1][1]["brightness"] > 128
     assert 70 < float(hass.states.get("sensor.bedroom_lamp_estimated_illuminance").state) < 100
     assert abs(int(hass.states.get("light.bedroom_lamp").attributes["brightness"]) - 128) < 5
+    target = hass.states.get("number.bedroom_lamp_target_illuminance")
+    precise_target = hass.data["calibrated_light"][entry.entry_id].target_lux
+    assert target.state == str(round(precise_target, 1))
+    assert target.attributes["max"] == 173.0
 
 
 async def test_options_change_reference_and_persist_target(hass, monkeypatch):
@@ -277,8 +281,11 @@ async def test_new_proxy_adopts_current_white_light_instead_of_starting_at_maxim
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     actual = float(hass.states.get("sensor.bedroom_lamp_estimated_illuminance").state)
-    requested = float(hass.states.get("number.bedroom_lamp_target_illuminance").state)
+    requested = hass.data["calibrated_light"][entry.entry_id].target_lux
     assert requested == pytest.approx(actual, abs=0.02)
+    assert float(hass.states.get("number.bedroom_lamp_target_illuminance").state) == pytest.approx(
+        actual, abs=0.051
+    )
 
 
 async def test_new_proxy_with_source_off_starts_at_minimum_on_target(hass):
@@ -314,5 +321,8 @@ async def test_proxy_adopts_late_source_state_after_startup(hass):
     )
     await hass.async_block_till_done()
     actual = float(hass.states.get("sensor.bedroom_lamp_estimated_illuminance").state)
-    requested = float(hass.states.get("number.bedroom_lamp_target_illuminance").state)
+    requested = hass.data["calibrated_light"][entry.entry_id].target_lux
     assert requested == pytest.approx(actual, abs=0.02)
+    assert float(hass.states.get("number.bedroom_lamp_target_illuminance").state) == pytest.approx(
+        actual, abs=0.051
+    )
