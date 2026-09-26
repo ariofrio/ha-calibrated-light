@@ -121,50 +121,56 @@ class Controller:
         await self._save()
         await self.apply()
 
-    async def set_brightness(self, brightness: int, kelvin: int | None = None) -> None:
+    async def set_brightness(
+        self, brightness: int, kelvin: int | None = None, transition: float | None = None
+    ) -> None:
         if kelvin is not None:
             self.kelvin = kelvin
         self.target_lux = map_brightness(self.model, brightness, self.kelvin, self.reference_lux)
         await self._save()
-        await self.apply()
+        await self.apply(transition)
 
-    async def set_kelvin(self, kelvin: int) -> None:
+    async def set_kelvin(self, kelvin: int, transition: float | None = None) -> None:
         if not self.model.min_kelvin <= kelvin <= self.model.max_kelvin:
             raise ValueError("CCT outside measured range")
         self.kelvin = kelvin
         await self._save()
-        await self.apply()
+        await self.apply(transition)
 
-    async def turn_on(self) -> None:
+    async def turn_on(self, transition: float | None = None) -> None:
         if self.pending_adoption:
             await self._save()
         if self.target_lux == 0:
             self.target_lux = self.model.lux(self.model.min_dim, self.kelvin, self.reference_lux)
             await self._save()
-        await self.apply()
+        await self.apply(transition)
 
-    async def turn_off(self) -> None:
+    async def turn_off(self, transition: float | None = None) -> None:
         if self.pending_adoption:
             await self._save()
-        await self.hass.services.async_call(
-            "light", "turn_off", {"entity_id": self.source}, blocking=True
-        )
+        data = {"entity_id": self.source}
+        if transition is not None:
+            data["transition"] = transition
+        await self.hass.services.async_call("light", "turn_off", data, blocking=True)
         self.notify()
 
-    async def apply(self) -> None:
+    async def apply(self, transition: float | None = None) -> None:
         command = plan_target(self.model, self.target_lux, self.kelvin, self.reference_lux)
         self.notify()
         if command.dim is None:
-            await self.turn_off()
+            await self.turn_off(transition)
             return
+        data = {
+            "entity_id": self.source,
+            "brightness": command.ha_brightness,
+            "color_temp_kelvin": self.kelvin,
+        }
+        if transition is not None:
+            data["transition"] = transition
         await self.hass.services.async_call(
             "light",
             "turn_on",
-            {
-                "entity_id": self.source,
-                "brightness": command.ha_brightness,
-                "color_temp_kelvin": self.kelvin,
-            },
+            data,
             blocking=True,
         )
         self.notify()

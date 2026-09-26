@@ -3,8 +3,10 @@
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
+    ATTR_TRANSITION,
     ColorMode,
     LightEntity,
+    LightEntityFeature,
 )
 
 from .const import DOMAIN
@@ -18,6 +20,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class CalibratedLight(ProxyEntity, LightEntity):
     _attr_name = None
     _attr_supported_color_modes = {ColorMode.COLOR_TEMP}
+    _attr_supported_features = LightEntityFeature.TRANSITION
 
     def __init__(self, controller) -> None:
         super().__init__(controller, "light")
@@ -65,12 +68,13 @@ class CalibratedLight(ProxyEntity, LightEntity):
     async def async_turn_on(self, **kwargs) -> None:
         brightness = kwargs.get(ATTR_BRIGHTNESS)
         kelvin = kwargs.get(ATTR_COLOR_TEMP_KELVIN)
+        transition = kwargs.get(ATTR_TRANSITION)
         if brightness is not None:
-            await self.controller.set_brightness(brightness, kelvin)
+            await self.controller.set_brightness(brightness, kelvin, transition)
         elif kelvin is not None:
-            await self.controller.set_kelvin(kelvin)
+            await self.controller.set_kelvin(kelvin, transition)
         else:
-            await self.controller.turn_on()
+            await self.controller.turn_on(transition)
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.controller.turn_off()
+        await self.controller.turn_off(kwargs.get(ATTR_TRANSITION))

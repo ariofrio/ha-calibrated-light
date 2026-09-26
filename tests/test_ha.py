@@ -135,6 +135,30 @@ async def test_off_and_on_restore_requested_values(hass, monkeypatch):
     assert calls[-1][1]["brightness"] > 0
 
 
+async def test_proxy_forwards_transition_to_source(hass, monkeypatch):
+    await setup_proxy(hass)
+    calls = intercept_source(hass, monkeypatch)
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {
+            "entity_id": "light.bedroom_lamp",
+            "brightness_pct": 100,
+            "color_temp_kelvin": 4517,
+            "transition": 600,
+        },
+        blocking=True,
+    )
+    assert calls[-1][1]["transition"] == 600
+    await hass.services.async_call(
+        "light",
+        "turn_off",
+        {"entity_id": "light.bedroom_lamp", "transition": 3},
+        blocking=True,
+    )
+    assert calls[-1][1]["transition"] == 3
+
+
 async def test_external_rgb_mode_makes_estimate_unavailable(hass):
     await setup_proxy(hass)
     hass.states.async_set(
