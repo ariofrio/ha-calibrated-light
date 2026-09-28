@@ -1,5 +1,7 @@
 # Calibrated Light for Home Assistant
 
+> **Archived:** Calibrated Light has moved into [Physical Lights](https://github.com/ariofrio/ha-physical-lights) as its Calibrated light device. Use Physical Lights for new installations and follow its [migration instructions](https://github.com/ariofrio/ha-physical-lights#install) for existing setups. This repository remains available for its source and past releases, but is no longer maintained.
+
 A light proxy whose **white-light target illuminance is in lux at a position you choose**. It wraps an existing light, uses a measured model of that bulb's white-light dimming and color-temperature response, and passes uncalibrated color and effect controls through to the source. It is separate from [Daylight](https://github.com/ariofrio/ha-daylight): Daylight describes an outdoor clear-sky reference; Calibrated Light describes a lamp's estimated contribution at one indoor position.
 
 The first measured profile is the [Philips WiZ 21 W A23, retail model 9290034999](https://www.usa.lighting.philips.com/consumer/p/smart-led-bulb-21w-eq150w-a23-e26/046677578718). WiZ's HA model string `SHRGB` is too broad to identify this retail model automatically. Select the measured model only if the bulb label matches.
